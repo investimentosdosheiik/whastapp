@@ -9,6 +9,7 @@
     "test": "node --test *.test.cjs"
   },
   "dependencies": {
+    "@vercel/oidc": "4.0.1",
     "google-auth-library": "11.3.1"
   }
 }

@@ -2,11 +2,11 @@
 const {createHmac,createHash,timingSafeEqual,randomBytes}=require('node:crypto');
 const {SheetsStore,fault}=require('./server-sheets.cjs');
 const {SettingsStore}=require('./server-settings.cjs');
+const {sheetReady,createClient}=require('./server-auth.cjs');
 const COOKIE='__Host-impulso';
 const attempts=new Map();
 let authClient;
 function authReady(){return typeof process.env.APP_PASSWORD==='string'&&process.env.APP_PASSWORD.length>=16&&typeof process.env.SESSION_SECRET==='string'&&process.env.SESSION_SECRET.length>=32}
-function sheetReady(){try{const c=JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON||'null');return !!(c?.type==='service_account'&&typeof c.client_email==='string'&&c.client_email.endsWith('.gserviceaccount.com')&&typeof c.private_key==='string'&&c.private_key.includes('PRIVATE KEY')&&/^[a-zA-Z0-9_-]+$/.test(process.env.GOOGLE_SHEET_ID||''))}catch(_){return false}}
 function mac(s){return createHmac('sha256',process.env.SESSION_SECRET).update(s).digest('base64url')}
 function same(a,b){const x=createHash('sha256').update(String(a)).digest(),y=createHash('sha256').update(String(b)).digest();return timingSafeEqual(x,y)}
 function makeSession(){const p=Buffer.from(JSON.stringify({exp:Date.now()+7*86400000,nonce:randomBytes(16).toString('hex'),version:mac(process.env.APP_PASSWORD)})).toString('base64url');return p+'.'+mac(p)}
@@ -14,7 +14,7 @@ function authorized(req){try{if(!authReady())return false;const token=String(req
 function cookie(res,token){res.setHeader('Set-Cookie',`${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${token?7*86400:0}`)}
 function body(req){let b;try{b=typeof req.body==='string'?JSON.parse(req.body):req.body}catch(_){throw fault(400,'JSON inválido.')}if(!b||typeof b!=='object'||Array.isArray(b)||Buffer.byteLength(JSON.stringify(b))>65536)throw fault(400,'Solicitação inválida.');return b}
 function checkOrigin(req){const origin=req.headers.origin;if(!origin||new URL(origin).host!==req.headers.host)throw fault(403,'Origem não autorizada.');if(!String(req.headers['content-type']||'').startsWith('application/json'))throw fault(415,'Use JSON.')}
-async function call(path,options={}){if(!authClient){const {GoogleAuth}=require('google-auth-library');authClient=new GoogleAuth({credentials:JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON),scopes:['https://www.googleapis.com/auth/spreadsheets']})}const client=await authClient.getClient();try{const r=await client.request({url:'https://sheets.googleapis.com/v4/spreadsheets'+path,method:options.method||'GET',data:options.body,timeout:15000,retry:false});return r.data}catch(e){const status=e.response?.status;if(status===403||status===404)throw fault(502,'Não foi possível acessar a planilha. Confira a API habilitada, o ID e o compartilhamento com a conta de serviço.');throw fault(502,'O Google não respondeu. Tente novamente em instantes.')}}
+async function call(path,options={}){try{if(!authClient)authClient=await createClient();const r=await authClient.request({url:'https://sheets.googleapis.com/v4/spreadsheets'+path,method:options.method||'GET',data:options.body,timeout:15000,retry:false});return r.data}catch(e){const status=e.response?.status;if(status===400||status===401||status===403||status===404)throw fault(502,'Não foi possível acessar a planilha. Confira a federação Google, as APIs, o ID e o compartilhamento com a conta de serviço.');throw fault(502,'O Google não respondeu. Tente novamente em instantes.')}}
 async function handler(req,res){
  res.setHeader('Cache-Control','no-store, private');res.setHeader('Vary','Cookie');res.setHeader('X-Content-Type-Options','nosniff');
  try{

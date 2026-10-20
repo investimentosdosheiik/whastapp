@@ -10,7 +10,10 @@ Configure as variáveis em **Production** (e em Preview apenas se desejar o mesm
 
 | Variável | Conteúdo |
 | --- | --- |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | JSON completo da chave Google, marcado como sensível |
+| `GCP_PROJECT_NUMBER` | Número do projeto Google (não é o ID da conta de serviço) |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | E-mail da conta de serviço dedicada |
+| `GCP_WORKLOAD_IDENTITY_POOL_ID` | `impulso-vercel` |
+| `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID` | `whastapp` |
 | `GOOGLE_SHEET_ID` | ID da planilha privada |
 | `GOOGLE_SHEET_TAB` | `Prospects` |
 | `APP_PASSWORD` | Sua senha de acesso ao aplicativo, com ao menos 16 caracteres |
@@ -18,13 +21,17 @@ Configure as variáveis em **Production** (e em Preview apenas se desejar o mesm
 
 Não use prefixos `NEXT_PUBLIC_` ou `VITE_` para esses valores. Não coloque o JSON ou senhas no GitHub. Faça um novo deployment após configurar as variáveis.
 
-## Autorizar o Google
+## Autorizar o Google sem chave JSON
 
-1. Em um projeto Google Cloud da sua conta, habilite a **Google Sheets API**.
-2. Crie uma conta de serviço dedicada ao Impulso. Não atribua papéis administrativos do projeto nem delegação de domínio.
-3. Crie uma chave JSON e coloque o conteúdo somente na variável sensível `GOOGLE_SERVICE_ACCOUNT_JSON` da Vercel.
-4. Compartilhe **apenas a planilha do aplicativo**, como Editor, com o `client_email` da conta de serviço.
-5. Guarde a chave com segurança ou remova a cópia local após configurar o servidor. Revogar a chave ou o compartilhamento interrompe o acesso do aplicativo.
+A integração usa Vercel OIDC e Google Workload Identity Federation. Não precisa gerar chave JSON nem desativar políticas da organização. O servidor solicita tokens temporários com escopo somente de planilhas.
+
+O arquivo `configurar-google.sh` prepara o projeto escolhido para este aplicativo. Execute no Google Cloud Shell, autenticado como proprietário ou com as permissões necessárias. Antes de executar, confira os identificadores no início do arquivo. Ele solicita `AUTORIZAR`, habilita IAM, Resource Manager, IAM Credentials, STS e Sheets, cria um pool/provedor dedicado e concede `roles/iam.workloadIdentityUser` somente na conta `impulso`. A confiança exige o projeto Vercel exato, seu ID estável e o ambiente `production`. Previews e outros projetos não recebem acesso.
+
+O emissor conferido na Vercel é Team: `https://oidc.vercel.com/investimentosdosheiik`; o público é `https://vercel.com/investimentosdosheiik`. A regra exige o assunto `owner:investimentosdosheiik:project:whastapp:environment:production`. Se renomear o projeto ou equipe, revise a federação.
+
+O script interrompe se houver erro ou um provedor existente com regras diferentes. Ele não cria chaves, não muda políticas de organização e não concede papéis administrativos à conta. Ao terminar, imprime somente as quatro configurações públicas para colocar na Vercel. A execução real depende das permissões e políticas do projeto Google. Compartilhe apenas a planilha do aplicativo, como Editor, com a conta de serviço. Esse compartilhamento já foi realizado para a conta indicada pelo proprietário.
+
+Para projetos que já permitem chaves, o servidor também aceita `GOOGLE_SERVICE_ACCOUNT_JSON` como alternativa privada. Se a federação estiver completa, ela tem preferência. Nunca envie chaves ao GitHub ou ao chat.
 
 Enquanto a configuração estiver incompleta, o aplicativo mantém o modo local e mostra um aviso. Depois de ativada, exige senha para buscar os contatos. Sessões usam cookie HttpOnly, Secure e SameSite=Strict. O limite de tentativas de senha funciona por instância; para uso mais amplo, complemente com limite de requisições no firewall da Vercel.
 
